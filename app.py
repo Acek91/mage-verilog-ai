@@ -4,7 +4,7 @@ import base64
 
 # --- CONFIGURATION ---
 # Fixed Model ID for February 2026
-MODEL_ID = "gemini-3-pro-preview" 
+MODEL_ID = "gemini-3-flash" 
 
 st.set_page_config(page_title="MAGE AI: RTL & SV Hub", layout="wide")
 
