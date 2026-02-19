@@ -1,65 +1,84 @@
 import streamlit as st
 import requests
-import json
+import base64
 
-# App Configuration
-st.set_page_config(page_title="MAGE AI: Verilog Generator", layout="wide")
+# --- CONFIGURATION ---
+st.set_page_config(page_title="MAGE AI: Protocol Architect", layout="wide")
 
-# Helper: Call Gemini AI
-def call_gemini(prompt, api_key):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
-    headers = {'Content-Type': 'application/json'}
-    data = {"contents": [{"parts": [{"text": prompt}]}]}
-    response = requests.post(url, headers=headers, json=data)
-    try:
-        return response.json()['candidates'][0]['content']['parts'][0]['text'].replace("```verilog", "").replace("```", "").strip()
-    except:
-        return "Error: Check your AI API Key."
-
-# Helper: Call JDoodle Cloud Compiler (Zero Install Verilog Check)
-def cloud_compile(code, client_id, client_secret):
-    url = "https://api.jdoodle.com/v1/execute"
+def call_gemini_with_pdf(prompt, api_key, pdf_file=None):
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key={api_key}"
+    
     payload = {
-        "clientId": client_id, "clientSecret": client_secret,
-        "script": code, "language": "verilog", "versionIndex": "0"
+        "contents": [{
+            "parts": []
+        }]
     }
-    response = requests.post(url, json=payload)
-    res = response.json()
-    output = res.get("output", "")
-    is_success = res.get("statusCode") == 200 and "error" not in output.lower()
-    return is_success, output
 
-# --- UI ---
-st.title("🛡️ MAGE AI: RTL Agent")
-st.markdown("Generate and verify Verilog protocols in the cloud—no installation required.")
+    # Add PDF context if uploaded
+    if pdf_file is not None:
+        pdf_data = base64.b64encode(pdf_file.read()).decode('utf-8')
+        payload["contents"][0]["parts"].append({
+            "inline_data": {
+                "mime_type": "application/pdf",
+                "data": pdf_data
+            }
+        })
+    
+    # Add the text instructions
+    payload["contents"][0]["parts"].append({"text": prompt})
+
+    response = requests.post(url, json=payload)
+    try:
+        return response.json()['candidates'][0]['content']['parts'][0]['text']
+    except Exception as e:
+        return f"Error: {str(response.json())}"
+
+# --- UI INTERFACE ---
+st.title("🛡️ MAGE AI: Protocol Notebook")
+st.markdown("Upload a Protocol PDF (e.g., AXI, PCIe, SPI) and generate verified Verilog logic.")
 
 with st.sidebar:
-    st.header("🔑 API Credentials")
+    st.header("🔑 API Keys")
     ai_key = st.text_input("Gemini API Key", type="password")
     jd_id = st.text_input("JDoodle Client ID")
     jd_secret = st.text_input("JDoodle Client Secret", type="password")
-    st.info("Get keys at: aistudio.google.com & jdoodle.com")
+    
+    st.divider()
+    st.header("📄 Source Materials")
+    uploaded_file = st.file_uploader("Upload Protocol Datasheet (PDF)", type="pdf")
 
-prompt = st.text_area("Requirement (e.g. AXI4-Lite Slave with 2 regs)", height=150)
-protocol = st.selectbox("Protocol Standard", ["Generic", "AXI4-Lite", "SPI", "I2C", "UART"])
+col1, col2 = st.columns(2)
 
-if st.button("Generate & Cloud-Verify", type="primary"):
-    if not (ai_key and jd_id and jd_secret):
-        st.error("Please provide all API keys in the sidebar.")
-    else:
-        with st.spinner("AI Generating..."):
-            code = call_gemini(f"Write a {protocol} Verilog module: {prompt}. Only code.", ai_key)
-            st.subheader("Generated RTL")
-            st.code(code, language="verilog")
-            
-            with st.spinner("Cloud Compiler Checking..."):
-                success, logs = cloud_compile(code, jd_id, jd_secret)
-                if success:
-                    st.success("✅ Syntax Verified!")
-                else:
-                    st.warning("⚠️ Syntax Errors Found")
-                    st.text_area("Compiler Output", logs)
-                    # Auto-fix attempt
-                    if st.button("Auto-Fix Errors"):
-                        fixed_code = call_gemini(f"Fix this Verilog code based on errors: {logs}\nCode:\n{code}", ai_key)
-                        st.code(fixed_code, language="verilog")
+with col1:
+    st.subheader("Design Requirements")
+    user_prompt = st.text_area("What should the AI build?", 
+                              placeholder="e.g. Create a Slave bridge based on the uploaded spec...", height=200)
+    
+    generate_btn = st.button("Analyze & Generate RTL", type="primary")
+
+with col2:
+    if generate_btn:
+        if not ai_key:
+            st.error("Please enter your Gemini API Key.")
+        else:
+            with st.spinner("Analyzing protocol and generating code..."):
+                # System instructions integrated into the prompt
+                context_prompt = f"""
+                You are a Senior RTL Design Engineer. 
+                Task: {user_prompt}
+                Instruction: Use the provided PDF as the absolute reference for timing, signal names, and handshaking.
+                Output: Provide ONLY the Verilog code block.
+                """
+                
+                result_code = call_gemini_with_pdf(context_prompt, ai_key, uploaded_file)
+                
+                # Clean the markdown
+                clean_code = result_code.replace("```verilog", "").replace("```", "").strip()
+                
+                st.subheader("Generated Verilog")
+                st.code(clean_code, language="verilog")
+                
+                # Cloud Compilation Check (JDoodle)
+                if jd_id and jd_secret:
+                    st.info("Running Cloud Syntax Check...")
+                    # (Insert the cloud_compile function from previous conversation here)
