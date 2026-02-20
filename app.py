@@ -13,7 +13,7 @@ socket.getaddrinfo = new_getaddrinfo
 
 # --- CONFIGURATION ---
 # Using the brand new Gemini 3.1 Pro (Released Feb 19, 2026)
-MODEL_ID = "gemini-3.1-pro-preview" 
+MODEL_ID = "gemini-3-flash-preview" 
 
 st.set_page_config(page_title="🛡️ MAGE AI: Universal RTL Hub", layout="wide")
 
