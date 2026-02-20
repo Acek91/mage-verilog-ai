@@ -1,96 +1,89 @@
 import streamlit as st
 import requests
+import json
 import base64
 
-# --- CONFIGURATION ---
-# Fixed Model ID for February 2026
-MODEL_ID = "gemini-3-flash-preview" 
+# --- PROFESSIONAL CONFIGURATION ---
+# Gemini 2.5 Flash is the fastest & has the highest free quota in 2026
+MODEL_ID = "gemini-2.5-flash" 
 
-st.set_page_config(page_title="MAGE AI: RTL & SV Hub", layout="wide")
+st.set_page_config(page_title="RTL ARCHITECT PRO", page_icon="🛡️", layout="wide")
 
-def call_mage_ai(prompt, api_key, pdf_file=None):
-    # Fixed endpoint using v1beta for PDF support
+# Custom Genuine CSS for a "Premium" look
+st.markdown("""
+    <style>
+    .stTextArea textarea { font-family: 'Courier New', Courier, monospace; }
+    .stCodeBlock { border-radius: 10px; border: 1px solid #4A90E2; }
+    .main { background-color: #f8f9fa; }
+    </style>
+""", unsafe_allow_html=True)
+
+# --- RTL SYSTEM PROMPTS (Integrated from your snippet) ---
+SYSTEM_PROMPT = "You are an expert in RTL design. You write SystemVerilog with no syntax errors and correct functionality."
+
+EXTRA_RULES = """
+Other requirements:
+1. Don't use state_t; use localparam, reg, or logic.
+2. Declare all ports and signals as logic.
+3. Initialize signals without reset to a known value using 'initial' blocks.
+4. Use always @(*) for combinational logic.
+5. NEVER USE 'inside', 'unique', or 'unique0' keywords.
+"""
+
+def call_gemini_api(prompt, api_key, pdf_file=None):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_ID}:generateContent?key={api_key}"
     
     parts = []
+    if pdf_file:
+        pdf_b64 = base64.b64encode(pdf_file.read()).decode('utf-8')
+        parts.append({"inline_data": {"mime_type": "application/pdf", "data": pdf_b64}})
     
-    # 1. Attach PDF if provided (Base64 Inline)
-    if pdf_file is not None:
-        try:
-            pdf_bytes = pdf_file.read()
-            pdf_b64 = base64.b64encode(pdf_bytes).decode('utf-8')
-            parts.append({
-                "inline_data": {
-                    "mime_type": "application/pdf",
-                    "data": pdf_b64
-                }
-            })
-        except Exception as e:
-            st.error(f"File Error: {e}")
-
-    # 2. Attach the Instruction/Requirement
-    parts.append({"text": prompt})
-
-    payload = {"contents": [{"parts": parts}]}
-    headers = {'Content-Type': 'application/json'}
+    parts.append({"text": f"{SYSTEM_PROMPT}\n\n{prompt}\n\n{EXTRA_RULES}"})
     
-    response = requests.post(url, json=payload, headers=headers)
-    res_json = response.json()
-    
-    if response.status_code != 200:
-        error_msg = res_json.get('error', {}).get('message', 'Unknown Error')
-        return f"🚨 API Error: {error_msg}"
+    payload = {"contents": [{"parts": parts}], "generationConfig": {"temperature": 0.2}}
     
     try:
+        response = requests.post(url, json=payload, headers={'Content-Type': 'application/json'}, timeout=30)
+        res_json = response.json()
         return res_json['candidates'][0]['content']['parts'][0]['text']
-    except (KeyError, IndexError):
-        return "⚠️ Error: The AI returned an empty response. Check your input."
+    except Exception as e:
+        return f"Error: {str(e)}"
 
-# --- TOOL INTERFACE ---
-st.title("🛡️ MAGE AI: RTL, SV & Testbench Hub")
-st.caption(f"Powered by {MODEL_ID} | No Installation Required")
+# --- UI LAYOUT ---
+st.title("🛡️ RTL ARCHITECT PRO")
+st.subheader("SystemVerilog Generation & Protocol Analysis")
 
 with st.sidebar:
-    st.header("🔑 Credentials")
-    ai_key = st.text_input("Gemini API Key", type="password", help="Get from aistudio.google.com")
-    
+    st.header("🔑 Secure Connection")
+    api_key = st.text_input("Gemini API Key", type="password", help="Using Gemini 2.5 Flash for maximum speed.")
     st.divider()
-    st.header("🎯 Mode Selection")
-    mode = st.selectbox("What are we doing?", 
-                        ["Design RTL Logic", "Generate Testbench", "Learn & Explain Concepts"])
-    
-    st.header("📚 Context (Optional)")
-    uploaded_pdf = st.file_uploader("Upload Protocol Spec (PDF)", type="pdf")
-    st.info("Upload a datasheet to make the AI follow specific industry rules.")
+    mode = st.radio("Task Mode", ["Module Design", "Testbench Gen", "Expert Explanation"])
+    uploaded_pdf = st.file_uploader("Reference Datasheet (PDF)", type="pdf")
+    st.info("The PDF acts as the 'Source of Truth' for timing and signals.")
 
-# Main Input
-st.subheader("Enter your Requirements")
-user_input = st.text_area("Example: '8-bit up/down counter with asynchronous reset' or 'Explain AXI4 handshaking'", 
-                          height=150)
+# Input Field
+user_input = st.text_area("Functional Specification (Natural Language)", height=200, 
+                          placeholder="Describe the module logic or K-map requirements here...")
 
-if st.button("Generate Result", type="primary"):
-    if not ai_key:
-        st.error("Please enter your Gemini API key in the sidebar.")
-    elif not user_input:
-        st.warning("Please describe what you want to build or learn.")
+if st.button("🚀 Generate Synthesizable RTL", type="primary"):
+    if not api_key:
+        st.error("Please provide an API Key.")
     else:
-        with st.spinner("Processing through Mage AI logic..."):
-            # Custom Prompts based on Mode
-            if mode == "Design RTL Logic":
-                master_prompt = f"Act as a Senior RTL Design Engineer. Generate synthesizable Verilog/SystemVerilog code for: {user_input}. Ensure proper reset and clocking. Output ONLY code."
-            elif mode == "Generate Testbench":
-                master_prompt = f"Act as a Verification Engineer. Generate a complete SystemVerilog testbench for: {user_input}. Include clock generation, stimulus, and basic assertions. Output ONLY code."
-            else:
-                master_prompt = f"Act as a Digital Design Professor. Explain the following RTL concept clearly with examples: {user_input}."
-
-            # Execute
-            result = call_mage_ai(master_prompt, ai_key, uploaded_pdf)
+        with st.spinner("Analyzing requirements with Flash speed..."):
+            # Constructing the refined prompt
+            task_prefix = "Reason through the logic first, then provide the SystemVerilog module."
+            if mode == "Testbench Gen": task_prefix = "Generate a full SystemVerilog testbench with clock/reset."
             
-            st.markdown("---")
-            if "Error" in result:
-                st.error(result)
-            else:
-                if mode != "Learn & Explain Concepts":
-                    st.code(result, language="verilog")
-                else:
-                    st.markdown(result)
+            final_prompt = f"{task_prefix}\n\nInput Spec: {user_input}"
+            
+            raw_output = call_gemini_api(final_prompt, api_key, uploaded_pdf)
+            
+            # Displaying Reasoning and Code
+            st.success("Generation Complete!")
+            st.markdown("### 🧠 Design Reasoning")
+            st.info(raw_output.split('```')[0]) # Display reasoning if it exists
+            
+            if '```' in raw_output:
+                code_content = raw_output.split('```')[1].replace('systemverilog', '').replace('verilog', '')
+                st.markdown("### 💻 SystemVerilog RTL")
+                st.code(code_content, language="verilog")
